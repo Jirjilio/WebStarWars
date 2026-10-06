@@ -1,0 +1,75 @@
+<!<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Star Wars Web</title>
+</head>
+<body>
+    <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
+
+    <header class="header">
+        <div class="container">
+            <div class="logo">
+                <span class="logo-icon">★</span>
+                <div class="logo-text">
+                    <h1>STAR WARS WEB</h1>
+                </div>
+            </div>
+        </div>
+
+        <nav class="nav-tabs" role="tablist">
+            <button class="nav-tab active" role="tab" data-tab="characters" aria-selected="true">Personatges</button>
+            <button class="nav-tab" role="tab" data-tab="planets" aria-selected="false">Planetetes</button>
+            <button class="nav-tab" role="tab" data-tab="starships" aria-selected="false">Naus</button>
+        </nav>
+    </header>
+
+    <main class="main">
+        <div class="search-container">
+            <div class="search-wrapper">
+                <input type="text" id="character-search" class="search-input" placeholder="Cerca per nom..." autocomplete="off">
+                <button class="search-clear" id="search-clear" aria-label="Neteja cerca">✕</button>
+            </div>
+            <div class="search-results-count" id="search-results-count"></div>
+        </div>
+    </main>
+
+    <div class="grid" id="characters-grid">
+        
+    </div>
+    <div class="pagination" id="characters-pagination"></div>
+
+    <div class="grid" id="planets-grid" style="display: none;">
+        
+    </div>
+    <div class="pagination" id="planets-pagination" style="display: none;"></div>
+
+    <div class="grid" id="starships-grid" style="display: none;">
+      
+    </div>
+    <div class="pagination" id="starships-pagination" style="display: none;"></div>
+
+    <div class="modal-overlay" id="character-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal">
+            <button class="modal-close" id="modal-close" aria-label="Tanca">✕</button>
+            <div class="modal-header">
+                <h2 id="modal-title"></h2>
+                <div class="modal-subtitle" id="modal-subtitle"></div>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loader">
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+
+        </div>
+    </div>
+
+    <script src=""></script> <!-- Vincular amb JavaScript-->
+</body>
+</html>
