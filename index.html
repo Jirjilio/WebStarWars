@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Star Wars - SWAPI Explorer</title>
     <link rel="stylesheet" href="styles.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <canvas class="starfield" id="starfield" aria-hidden="true"></canvas>
@@ -17,8 +14,8 @@
             <div class="logo">
                 <span class="logo-icon">★</span>
                 <div class="logo-text">
-                    <h1>SWAPI EXPLORER</h1>
-                    <span class="logo-tagline">STAR WARS DATABASE</span>
+                    <h1>Star Wars Explorer</h1>
+                    <span class="logo-tagline">STAR WARS WEB</span>
                 </div>
             </div>
         </div>
@@ -33,10 +30,6 @@
     <main class="main">
         <div class="search-container">
             <div class="search-wrapper">
-                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
                 <input type="text" id="character-search" class="search-input" placeholder="Cerca per nom..." autocomplete="off">
                 <button class="search-clear" id="search-clear" aria-label="Neteja cerca">✕</button>
             </div>
@@ -45,17 +38,17 @@
     </main>
 
     <div class="grid" id="characters-grid">
-        <!-- Characters will be rendered here -->
+       
     </div>
     <div class="pagination" id="characters-pagination"></div>
 
     <div class="grid" id="planets-grid" style="display: none;">
-        <!-- Planets will be rendered here -->
+       
     </div>
     <div class="pagination" id="planets-pagination" style="display: none;"></div>
 
     <div class="grid" id="starships-grid" style="display: none;">
-        <!-- Starships will be rendered here -->
+        
     </div>
     <div class="pagination" id="starships-pagination" style="display: none;"></div>
 
@@ -75,7 +68,7 @@
             <div class="loader-ring"></div>
             <div class="loader-ring"></div>
             <div class="loader-ring"></div>
-            <span class="loader-text">CARREGANT...</span>
+          
         </div>
     </div>
     <script src="app.js"></script>
