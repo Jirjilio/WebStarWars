@@ -122,64 +122,123 @@ function renderEmpty(gridId, message) {
   grid.innerHTML = `<p class="empty-state">${message}</p>`;
 }
 
-// Modal
-function openModal(character) {
-  modalTitle.textContent = character.name;
-  modalSubtitle.textContent = `${character.height} cm | ${character.mass} kg`;
-  
-  let filmsList = '';
-  character.films.forEach((filmUrl, index) => {
-    fetch(filmUrl)
-      .then(res => res.json())
-      .then(film => {
-        filmsList += film.title;
-        if (index < character.films.length - 1) {
-          filmsList += ', ';
-        }
-        if (index === character.films.length - 1) {
-          updateModalBody(character, filmsList);
-        }
-      })
-      .catch(err => console.error('Error fetching film:', err));
-  });
-  
-  modalBody.innerHTML = `
-    <p><strong>Alçada:</strong> ${character.height} cm</p>
-    <p><strong>Pes:</strong> ${character.mass} kg</p>
-    <p><strong>Gènere:</strong> ${character.gender}</p>
-    <p><strong>Color de cabelles:</strong> ${character.hair_color}</p>
-    <p><strong>Color de pell:</strong> ${character.skin_color}</p>
-    <p><strong>Color dels ulls:</strong> ${character.eye_color}</p>
-    <p><strong>Any de naixement:</strong> ${character.birth_year}</p>
-    <div class="section-title">Pel·lícules</div>
-    <div class="list" id="films-list"></div>
-  `;
-  
-  // Wait for films to load
-  setTimeout(() => {
-    const filmsList = document.getElementById('films-list');
-    if (filmsList.children.length === 0) {
-      filmsList.innerHTML = '<span>No available</span>';
-    }
-  }, 500);
-  
-  characterModal.classList.add('active');
+// Modal — campos específicos por tipo de recurso
+const MODAL_FIELDS = {
+  characters: [
+    { label: 'Alçada', key: 'height', unit: 'cm' },
+    { label: 'Pes', key: 'mass', unit: 'kg' },
+    { label: 'Gènere', key: 'gender' },
+    { label: 'Color de pèl', key: 'hair_color' },
+    { label: 'Color de pell', key: 'skin_color' },
+    { label: 'Color dels ulls', key: 'eye_color' },
+    { label: 'Any de naixement', key: 'birth_year' }
+  ],
+  planets: [
+    { label: 'Període de rotació', key: 'rotation_period', unit: 'h' },
+    { label: 'Període orbital', key: 'orbital_period', unit: 'd' },
+    { label: 'Diàmetre', key: 'diameter', unit: 'km' },
+    { label: 'Clima', key: 'climate' },
+    { label: 'Gravetat', key: 'gravity' },
+    { label: 'Terreny', key: 'terrain' },
+    { label: 'Població', key: 'population' }
+  ],
+  starships: [
+    { label: 'Model', key: 'model' },
+    { label: 'Fabricant', key: 'manufacturer' },
+    { label: 'Cost', key: 'cost_in_credits', unit: 'crèdits' },
+    { label: 'Longitud', key: 'length', unit: 'm' },
+    { label: 'Tripulació', key: 'crew' },
+    { label: 'Passatgers', key: 'passengers' },
+    { label: 'Capacitat de càrrega', key: 'cargo_capacity', unit: 'kg' },
+    { label: 'Hiperimpulsor', key: 'hyperdrive_rating' },
+    { label: 'Classe', key: 'starship_class' }
+  ]
+};
+
+const MODAL_SUBTITLES = {
+  characters: item => `${withUnit(item.height, 'cm')} | ${withUnit(item.mass, 'kg')}`,
+  planets: item => `${formatValue(item.climate)} | ${formatValue(item.population)}`,
+  starships: item => `${formatValue(item.starship_class)} | ${formatValue(item.model)}`
+};
+
+function formatValue(value) {
+  if (value === undefined || value === null) return 'N/A';
+  const str = String(value).trim();
+  if (!str || str.toLowerCase() === 'n/a') return 'N/A';
+  return str;
 }
 
-function updateModalBody(character, filmsList) {
-  modalBody.innerHTML = `
-    <p><strong>Alçada:</strong> ${character.height} cm</p>
-    <p><strong>Pes:</strong> ${character.mass} kg</p>
-    <p><strong>Gènere:</strong> ${character.gender}</p>
-    <p><strong>Color de cabelles:</strong> ${character.hair_color}</p>
-    <p><strong>Color de pell:</strong> ${character.skin_color}</p>
-    <p><strong>Color dels ulls:</strong> ${character.eye_color}</p>
-    <p><strong>Any de naixement:</strong> ${character.birth_year}</p>
-    <div class="section-title">Pel·lícules</div>
-    <div class="list" id="films-list">
-      ${filmsList ? filmsList : '<span>No available</span>'}
-    </div>
-  `;
+function withUnit(value, unit) {
+  const v = formatValue(value);
+  return v === 'N/A' ? v : `${v} ${unit}`;
+}
+
+// Pel·lícules: caché de promesas para no re-descargar en cada apertura
+const filmCache = new Map();
+
+function fetchFilm(url) {
+  if (!filmCache.has(url)) {
+    const promise = fetchJson(url).catch(err => {
+      filmCache.delete(url);
+      throw err;
+    });
+    filmCache.set(url, promise);
+  }
+  return filmCache.get(url);
+}
+
+async function renderFilms(container, filmUrls) {
+  if (filmUrls.length === 0) {
+    container.textContent = 'Cap pel·lícula';
+    return;
+  }
+
+  container.textContent = 'Carregant...';
+
+  try {
+    const films = await Promise.all(filmUrls.map(fetchFilm));
+    container.textContent = '';
+    films.forEach(film => {
+      const chip = document.createElement('span');
+      chip.textContent = film.title;
+      container.appendChild(chip);
+    });
+  } catch (err) {
+    console.error('Error fetching films:', err);
+    container.textContent = "No s'han pogut carregar les pel·lícules.";
+  }
+}
+
+function openModal(item, type) {
+  modalTitle.textContent = item.name;
+
+  const subtitle = MODAL_SUBTITLES[type];
+  modalSubtitle.textContent = subtitle ? subtitle(item) : '';
+
+  modalBody.innerHTML = '';
+
+  const fields = MODAL_FIELDS[type] || [];
+  fields.forEach(({ label, key, unit }) => {
+    const p = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = label + ':';
+    p.appendChild(strong);
+    p.appendChild(document.createTextNode(' ' + (unit ? withUnit(item[key], unit) : formatValue(item[key]))));
+    modalBody.appendChild(p);
+  });
+
+  const sectionTitle = document.createElement('div');
+  sectionTitle.className = 'section-title';
+  sectionTitle.textContent = 'Pel·lícules';
+  modalBody.appendChild(sectionTitle);
+
+  const filmsList = document.createElement('div');
+  filmsList.className = 'list';
+  modalBody.appendChild(filmsList);
+  renderFilms(filmsList, item.films || []);
+
+  characterModal.classList.add('active');
+  modalClose.focus();
 }
 
 function closeModal() {
@@ -420,7 +479,7 @@ function renderCharactersCards(characters) {
     `;
     
     card.addEventListener('click', () => {
-      openModal(character);
+      openModal(character, 'characters');
     });
     
     grid.appendChild(card);
@@ -447,7 +506,7 @@ function renderPlanetsCards(planets) {
     `;
     
     card.addEventListener('click', () => {
-      openModal(planet);
+      openModal(planet, 'planets');
     });
     
     grid.appendChild(card);
@@ -473,7 +532,7 @@ function renderStarshipsCards(starships) {
     `;
     
     card.addEventListener('click', () => {
-      openModal(starship);
+      openModal(starship, 'starships');
     });
     
     grid.appendChild(card);
@@ -501,7 +560,7 @@ function debounce(func, wait) {
 // Campo de estrellas de fondo
 function seedStars() {
   const area = window.innerWidth * window.innerHeight;
-  const count = Math.max(40, Math.min(240, Math.round(area / 9000)));
+  const count = Math.max(300, Math.min(600, Math.round(area / 9000)));
 
   stars = [];
   for (let i = 0; i < count; i++) {
