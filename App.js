@@ -1,359 +1,667 @@
-const API = "https://swapi.dev/api";
+const SWAPI_BASE = 'https://swapi.dev/api';
 
-// Elementos HTML
-const grids = {
-    characters: document.getElementById("characters-grid"),
-    planets: document.getElementById("planets-grid"),
-    starships: document.getElementById("starships-grid")
-};
+const charactersGrid = document.getElementById('characters-grid');
+const planetsGrid = document.getElementById('planets-grid');
+const starshipsGrid = document.getElementById('starships-grid');
 
-const paginations = {
-    characters: document.getElementById("characters-pagination"),
-    planets: document.getElementById("planets-pagination"),
-    starships: document.getElementById("starships-pagination")
-};
+const navTabs = document.querySelectorAll('.nav-tab');
+const searchInput = document.getElementById('character-search');
+const searchClear = document.getElementById('search-clear');
+const searchResultsCount = document.getElementById('search-results-count');
 
-const tabs = document.querySelectorAll(".nav-tab");
-const search = document.getElementById("character-search");
-const clearSearch = document.getElementById("search-clear");
-const loading = document.getElementById("loading-overlay");
+const characterModal = document.getElementById('character-modal');
+const modalTitle = document.getElementById('modal-title');
+const modalSubtitle = document.getElementById('modal-subtitle');
+const modalBody = document.getElementById('modal-body');
+const modalClose = document.getElementById('modal-close');
 
-const modal = document.getElementById("character-modal");
-const modalTitle = document.getElementById("modal-title");
-const modalSubtitle = document.getElementById("modal-subtitle");
-const modalBody = document.getElementById("modal-body");
-const modalClose = document.getElementById("modal-close");
+const loadingOverlay = document.getElementById('loading-overlay');
 
-let currentTab = "characters";
+// Campo de estrellas de fondo
+const starfield = document.getElementById('starfield');
+const starfieldCtx = starfield ? starfield.getContext('2d') : null;
+const STAR_COLORS = ['#ffffff', '#f5f5f0', '#e3a83d', '#a9c4ff'];
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let stars = [];
+let starfieldRaf = null;
+
 let currentPage = 1;
+let currentSearch = '';
+let currentTab = 'characters';
 
+const RESOURCES = {
+  characters: 'people',
+  planets: 'planets',
+  starships: 'starships'
+};
 
-// -------------------------------------
-// CAMBIAR ENTRE PERSONAJES, PLANETAS Y NAVES
-// ------------------------------------
+// Estado independiente por pestaña
+const tabState = {
+  characters: { page: 1, search: '', totalPages: 1, count: 0, perPage: 0 },
+  planets: { page: 1, search: '', totalPages: 1, count: 0, perPage: 0 },
+  starships: { page: 1, search: '', totalPages: 1, count: 0, perPage: 0 }
+};
 
-tabs.forEach(tab => {
-    tab.addEventListener("click", () => {
+// swapi.dev ignora `limit`: siempre devuelve 10 elementos por petición
+const API_PAGE_SIZE = 10;
+// Objetivo de elementos por página, que luego se ajusta a un múltiplo
+// del número de columnas para que la última fila nunca quede a medias
+const BASE_PAGE_SIZE = 10;
 
-        tabs.forEach(t => t.classList.remove("active"));
-        tab.classList.add("active");
+// Tab switching
+navTabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    const tabName = tab.dataset.tab;
 
-        currentTab = tab.dataset.tab;
-        currentPage = 1;
-
-        search.value = "";
-
-        mostrarGrid();
-        cargarDatos();
+    navTabs.forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
     });
+    tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
+
+    currentTab = tabName;
+    currentPage = tabState[tabName].page;
+    currentSearch = tabState[tabName].search;
+
+    searchInput.value = currentSearch;
+    searchClear.classList.toggle('visible', Boolean(currentSearch));
+    searchResultsCount.textContent = '';
+
+    hideGrid('characters-grid', 'planets-grid', 'starships-grid',
+             'characters-pagination', 'planets-pagination', 'starships-pagination');
+    showGrid(tabName + '-grid');
+    showGrid(tabName + '-pagination', 'flex');
+
+    loadTab(tabName);
+  });
 });
 
-
-// ------------------------------------
-// MOSTRAR EL GRID CORRESPONDIENTE
-// ------------------------------------
-
-function mostrarGrid() {
-
-    Object.keys(grids).forEach(tab => {
-        grids[tab].style.display = "none";
-        paginations[tab].style.display = "none";
-    });
-
-    grids[currentTab].style.display = "grid";
-    paginations[currentTab].style.display = "flex";
+// Show/hide grid functions
+function showGrid(gridId, display = 'grid') {
+  const grid = document.getElementById(gridId);
+  if (grid) {
+    grid.style.display = display;
+  }
 }
 
+function hideGrid(...gridIds) {
+  gridIds.forEach(id => {
+    const grid = document.getElementById(id);
+    if (grid) {
+      grid.style.display = 'none';
+    }
+  });
+}
 
-// ------------------------------------
-// BUSCAR
-// ------------------------------------
+// Search functionality
+searchInput.addEventListener('input', debounce(handleSearch, 300));
 
-search.addEventListener("input", () => {
-    currentPage = 1;
-    cargarDatos();
+searchClear.addEventListener('click', () => {
+  searchInput.value = '';
+  searchClear.classList.remove('visible');
+  handleSearch();
 });
 
-clearSearch.addEventListener("click", () => {
-    search.value = "";
-    currentPage = 1;
-    cargarDatos();
+function handleSearch() {
+  const query = searchInput.value.trim();
+  currentSearch = query;
+  tabState[currentTab].search = query;
+
+  searchClear.classList.toggle('visible', Boolean(query));
+
+  currentPage = 1;
+  tabState[currentTab].page = 1;
+  loadTab(currentTab);
+}
+
+// Empty state
+function renderEmpty(gridId, message) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  grid.innerHTML = `<p class="empty-state">${message}</p>`;
+}
+
+// Modal — campos específicos por tipo de recurso
+const MODAL_FIELDS = {
+  characters: [
+    { label: 'Alçada', key: 'height', unit: 'cm' },
+    { label: 'Pes', key: 'mass', unit: 'kg' },
+    { label: 'Gènere', key: 'gender' },
+    { label: 'Color de pèl', key: 'hair_color' },
+    { label: 'Color de pell', key: 'skin_color' },
+    { label: 'Color dels ulls', key: 'eye_color' },
+    { label: 'Any de naixement', key: 'birth_year' }
+  ],
+  planets: [
+    { label: 'Període de rotació', key: 'rotation_period', unit: 'h' },
+    { label: 'Període orbital', key: 'orbital_period', unit: 'd' },
+    { label: 'Diàmetre', key: 'diameter', unit: 'km' },
+    { label: 'Clima', key: 'climate' },
+    { label: 'Gravetat', key: 'gravity' },
+    { label: 'Terreny', key: 'terrain' },
+    { label: 'Població', key: 'population' }
+  ],
+  starships: [
+    { label: 'Model', key: 'model' },
+    { label: 'Fabricant', key: 'manufacturer' },
+    { label: 'Cost', key: 'cost_in_credits', unit: 'crèdits' },
+    { label: 'Longitud', key: 'length', unit: 'm' },
+    { label: 'Tripulació', key: 'crew' },
+    { label: 'Passatgers', key: 'passengers' },
+    { label: 'Capacitat de càrrega', key: 'cargo_capacity', unit: 'kg' },
+    { label: 'Hiperimpulsor', key: 'hyperdrive_rating' },
+    { label: 'Classe', key: 'starship_class' }
+  ]
+};
+
+const MODAL_SUBTITLES = {
+  characters: item => `${withUnit(item.height, 'cm')} | ${withUnit(item.mass, 'kg')}`,
+  planets: item => `${formatValue(item.climate)} | ${formatValue(item.population)}`,
+  starships: item => `${formatValue(item.starship_class)} | ${formatValue(item.model)}`
+};
+
+function formatValue(value) {
+  if (value === undefined || value === null) return 'N/A';
+  const str = String(value).trim();
+  if (!str || str.toLowerCase() === 'n/a') return 'N/A';
+  return str;
+}
+
+function withUnit(value, unit) {
+  const v = formatValue(value);
+  return v === 'N/A' ? v : `${v} ${unit}`;
+}
+
+// Pel·lícules: caché de promesas para no re-descargar en cada apertura
+const filmCache = new Map();
+
+function fetchFilm(url) {
+  if (!filmCache.has(url)) {
+    const promise = fetchJson(url).catch(err => {
+      filmCache.delete(url);
+      throw err;
+    });
+    filmCache.set(url, promise);
+  }
+  return filmCache.get(url);
+}
+
+async function renderFilms(container, filmUrls) {
+  if (filmUrls.length === 0) {
+    container.textContent = 'Cap pel·lícula';
+    return;
+  }
+
+  container.textContent = 'Carregant...';
+
+  try {
+    const films = await Promise.all(filmUrls.map(fetchFilm));
+    container.textContent = '';
+    films.forEach(film => {
+      const chip = document.createElement('span');
+      chip.textContent = film.title;
+      container.appendChild(chip);
+    });
+  } catch (err) {
+    console.error('Error fetching films:', err);
+    container.textContent = "No s'han pogut carregar les pel·lícules.";
+  }
+}
+
+function openModal(item, type) {
+  modalTitle.textContent = item.name;
+
+  const subtitle = MODAL_SUBTITLES[type];
+  modalSubtitle.textContent = subtitle ? subtitle(item) : '';
+
+  modalBody.innerHTML = '';
+
+  const fields = MODAL_FIELDS[type] || [];
+  fields.forEach(({ label, key, unit }) => {
+    const p = document.createElement('p');
+    const strong = document.createElement('strong');
+    strong.textContent = label + ':';
+    p.appendChild(strong);
+    p.appendChild(document.createTextNode(' ' + (unit ? withUnit(item[key], unit) : formatValue(item[key]))));
+    modalBody.appendChild(p);
+  });
+
+  const sectionTitle = document.createElement('div');
+  sectionTitle.className = 'section-title';
+  sectionTitle.textContent = 'Pel·lícules';
+  modalBody.appendChild(sectionTitle);
+
+  const filmsList = document.createElement('div');
+  filmsList.className = 'list';
+  modalBody.appendChild(filmsList);
+  renderFilms(filmsList, item.films || []);
+
+  characterModal.classList.add('active');
+  modalClose.focus();
+}
+
+function closeModal() {
+  characterModal.classList.remove('active');
+}
+
+modalClose.addEventListener('click', closeModal);
+
+characterModal.addEventListener('click', (e) => {
+  if (e.target === characterModal) {
+    closeModal();
+  }
 });
 
+// Paginación
+function renderPagination(tabName) {
+  const container = document.getElementById(tabName + '-pagination');
+  if (!container) return;
 
-// ------------------------------------
-// CARGAR DATOS DE LA API
-// ------------------------------------
+  const { page, totalPages } = tabState[tabName];
+  container.innerHTML = '';
 
-async function cargarDatos() {
+  if (totalPages <= 1) return;
 
-    loading.classList.remove("hidden");
-
-    let url = `${API}/${getRecurso()}/?page=${currentPage}`;
-
-    if (search.value.trim() !== "") {
-        url += `&search=${encodeURIComponent(search.value.trim())}`;
+  const addBtn = (label, targetPage, opts = {}) => {
+    const btn = document.createElement('button');
+    btn.className = 'page-btn' + (opts.active ? ' active' : '') + (opts.disabled ? ' disabled' : '');
+    btn.textContent = label;
+    btn.disabled = Boolean(opts.disabled);
+    if (!opts.disabled && !opts.active) {
+      btn.addEventListener('click', () => goToPage(tabName, targetPage));
     }
+    container.appendChild(btn);
+  };
 
-    try {
+  addBtn('«', 1, { disabled: page === 1 });
+  addBtn('‹', page - 1, { disabled: page === 1 });
 
-        const respuesta = await fetch(url);
+  // Ventana de páginas alrededor de la actual
+  const start = Math.max(1, page - 2);
+  const end = Math.min(totalPages, start + 4);
+  const realStart = Math.max(1, end - 4);
 
-        if (!respuesta.ok) {
-            throw new Error("Error al conectar con la API");
-        }
-
-        const datos = await respuesta.json();
-
-        mostrarResultados(datos.results);
-        mostrarPaginacion(datos);
-
-    } catch (error) {
-
-        console.error(error);
-
-        grids[currentTab].innerHTML =
-            "<p class='empty-state'>Error al cargar los datos.</p>";
-
+  if (realStart > 1) {
+    addBtn('1', 1);
+    if (realStart > 2) {
+      const dots = document.createElement('span');
+      dots.className = 'page-dots';
+      dots.textContent = '…';
+      container.appendChild(dots);
     }
+  }
 
-    loading.classList.add("hidden");
+  for (let p = realStart; p <= end; p++) {
+    addBtn(String(p), p, { active: p === page });
+  }
+
+  if (end < totalPages) {
+    if (end < totalPages - 1) {
+      const dots = document.createElement('span');
+      dots.className = 'page-dots';
+      dots.textContent = '…';
+      container.appendChild(dots);
+    }
+    addBtn(String(totalPages), totalPages);
+  }
+
+  addBtn('›', page + 1, { disabled: page === totalPages });
+  addBtn('»', totalPages, { disabled: page === totalPages });
 }
 
+function goToPage(tabName, page) {
+  const state = tabState[tabName];
+  if (page < 1 || page > state.totalPages || page === state.page) return;
 
-// ------------------------------------
-// SABER QUÉ RECURSO DE SWAPI USAR
-// ------------------------------------
+  state.page = page;
+  if (tabName === currentTab) {
+    currentPage = page;
+  }
 
-function getRecurso() {
-
-    if (currentTab === "characters") {
-        return "people";
-    }
-
-    if (currentTab === "planets") {
-        return "planets";
-    }
-
-    return "starships";
+  loadTab(tabName);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-
-// ------------------------------------
-// MOSTRAR RESULTADOS
-// ------------------------------------
-
-function mostrarResultados(resultados) {
-
-    const grid = grids[currentTab];
-
-    grid.innerHTML = "";
-
-    if (resultados.length === 0) {
-        grid.innerHTML =
-            "<p class='empty-state'>No se han encontrado resultados.</p>";
-        return;
+// Número de columnas que la rejilla usa con el ancho actual. Una rejilla oculta
+// devuelve 'none', así que se mide la primera que esté visible.
+function getColumnCount() {
+  const ids = [currentTab + '-grid', 'characters-grid', 'planets-grid', 'starships-grid'];
+  for (const id of ids) {
+    const grid = document.getElementById(id);
+    if (!grid) continue;
+    const template = getComputedStyle(grid).gridTemplateColumns;
+    if (template && template !== 'none') {
+      return Math.max(1, template.trim().split(/\s+/).length);
     }
-
-    resultados.forEach(item => {
-
-        const card = document.createElement("div");
-
-        card.className = "card";
-
-        if (currentTab === "characters") {
-
-            card.innerHTML = `
-                <div class="card-image"></div>
-
-                <div class="card-content">
-                    <div class="card-title">${item.name}</div>
-
-                    <div class="card-description">
-                        <strong>Altura:</strong> ${item.height} cm<br>
-                        <strong>Peso:</strong> ${item.mass} kg<br>
-                        <strong>Género:</strong> ${item.gender}
-                    </div>
-                </div>
-            `;
-
-        } else if (currentTab === "planets") {
-
-            card.innerHTML = `
-                <div class="card-image"></div>
-
-                <div class="card-content">
-                    <div class="card-title">${item.name}</div>
-
-                    <div class="card-description">
-                        <strong>Clima:</strong> ${item.climate}<br>
-                        <strong>Población:</strong> ${item.population}
-                    </div>
-                </div>
-            `;
-
-        } else {
-
-            card.innerHTML = `
-                <div class="card-image"></div>
-
-                <div class="card-content">
-                    <div class="card-title">${item.name}</div>
-
-                    <div class="card-description">
-                        <strong>Modelo:</strong> ${item.model}<br>
-                        <strong>Pasajeros:</strong> ${item.passengers}
-                    </div>
-                </div>
-            `;
-
-        }
-
-        card.addEventListener("click", () => abrirModal(item));
-
-        grid.appendChild(card);
-    });
+  }
+  return 1;
 }
 
-
-// ------------------------------------
-// PAGINACIÓN
-// ------------------------------------
-
-function mostrarPaginacion(datos) {
-
-    const pagination = paginations[currentTab];
-
-    pagination.innerHTML = "";
-
-    const totalPaginas = Math.ceil(datos.count / 10);
-
-    if (totalPaginas <= 1) {
-        return;
-    }
-
-    // Botón anterior
-    const anterior = document.createElement("button");
-
-    anterior.textContent = "‹";
-    anterior.disabled = currentPage === 1;
-
-    anterior.addEventListener("click", () => {
-
-        if (currentPage > 1) {
-            currentPage--;
-            cargarDatos();
-            window.scrollTo(0, 0);
-        }
-
-    });
-
-    pagination.appendChild(anterior);
-
-
-    // Número de página
-    const pagina = document.createElement("span");
-
-    pagina.textContent =
-        `Página ${currentPage} de ${totalPaginas}`;
-
-    pagination.appendChild(pagina);
-
-
-    // Botón siguiente
-    const siguiente = document.createElement("button");
-
-    siguiente.textContent = "›";
-    siguiente.disabled = currentPage === totalPaginas;
-
-    siguiente.addEventListener("click", () => {
-
-        if (currentPage < totalPaginas) {
-            currentPage++;
-            cargarDatos();
-            window.scrollTo(0, 0);
-        }
-
-    });
-
-    pagination.appendChild(siguiente);
+// Tamaño de página múltiplo de las columnas: las filas quedan siempre completas
+function getPageSize() {
+  const columns = getColumnCount();
+  const rows = Math.max(1, Math.ceil(BASE_PAGE_SIZE / columns));
+  return columns * rows;
 }
 
+function fetchJson(url) {
+  return fetch(url).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  });
+}
 
-// ------------------------------------
-// MODAL
-// ------------------------------------
+// Las peticiones de más no existen y la API responde 404: no es un error real,
+// simplemente no quedan más resultados. La primera página sí debe funcionar.
+function fetchTailJson(url) {
+  return fetchJson(url).catch(err => {
+    if (/^HTTP 404$/.test(err.message)) return { results: [] };
+    throw err;
+  });
+}
 
-function abrirModal(item) {
+// Une las peticiones necesarias de la API para cubrir un tramo de `perPage` elementos
+function fetchSlice(resource, page, perPage, search) {
+  const start = (page - 1) * perPage;
+  const firstApiPage = Math.floor(start / API_PAGE_SIZE) + 1;
+  const offset = start % API_PAGE_SIZE;
 
-    modalTitle.textContent = item.name;
+  const requests = [];
+  const needed = Math.ceil((offset + perPage) / API_PAGE_SIZE);
+  for (let i = 0; i < needed; i++) {
+    let url = `${SWAPI_BASE}/${resource}/?page=${firstApiPage + i}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    requests.push(i === 0 ? fetchJson(url) : fetchTailJson(url));
+  }
 
-    if (currentTab === "characters") {
+  return Promise.all(requests).then(pages => {
+    const items = [];
+    pages.forEach(data => (data.results || []).forEach(item => items.push(item)));
+    return {
+      count: pages[0].count ?? 0,
+      results: items.slice(offset, offset + perPage)
+    };
+  });
+}
 
-        modalSubtitle.textContent =
-            `${item.height} cm | ${item.mass} kg`;
+// Carga de datos con paginación del servidor
+async function loadTab(tabName) {
+  const state = tabState[tabName];
+  const resource = RESOURCES[tabName];
 
-        modalBody.innerHTML = `
-            <p><strong>Altura:</strong> ${item.height} cm</p>
-            <p><strong>Peso:</strong> ${item.mass} kg</p>
-            <p><strong>Género:</strong> ${item.gender}</p>
-            <p><strong>Color de pelo:</strong> ${item.hair_color}</p>
-            <p><strong>Color de piel:</strong> ${item.skin_color}</p>
-            <p><strong>Color de ojos:</strong> ${item.eye_color}</p>
-            <p><strong>Año de nacimiento:</strong> ${item.birth_year}</p>
-        `;
+  showLoading();
+  state.perPage = getPageSize();
 
-    } else if (currentTab === "planets") {
+  try {
+    let data = await fetchSlice(resource, state.page, state.perPage, state.search);
 
-        modalSubtitle.textContent = item.climate;
+    state.count = data.count;
+    state.totalPages = state.count > 0 ? Math.ceil(state.count / state.perPage) : 1;
 
-        modalBody.innerHTML = `
-            <p><strong>Clima:</strong> ${item.climate}</p>
-            <p><strong>Población:</strong> ${item.population}</p>
-            <p><strong>Terreno:</strong> ${item.terrain}</p>
-            <p><strong>Gravedad:</strong> ${item.gravity}</p>
-            <p><strong>Diámetro:</strong> ${item.diameter}</p>
-        `;
+    // El ancho pudo cambiar y dejar la página actual fuera de rango
+    if (state.page > state.totalPages) {
+      state.page = state.totalPages;
+      if (tabName === currentTab) currentPage = state.page;
+      data = await fetchSlice(resource, state.page, state.perPage, state.search);
+    }
 
+    hideLoading();
+
+    const results = data.results;
+
+    if (results.length === 0) {
+      renderEmpty(tabName + '-grid', state.search
+        ? `No s'ha trobat cap resultat per a "${state.search}".`
+        : 'No hi ha cap resultat.');
+    } else if (tabName === 'characters') {
+      renderCharactersCards(results);
+    } else if (tabName === 'planets') {
+      renderPlanetsCards(results);
     } else {
-
-        modalSubtitle.textContent = item.model;
-
-        modalBody.innerHTML = `
-            <p><strong>Modelo:</strong> ${item.model}</p>
-            <p><strong>Fabricante:</strong> ${item.manufacturer}</p>
-            <p><strong>Velocidad:</strong> ${item.max_atmosphering_speed}</p>
-            <p><strong>Pasajeros:</strong> ${item.passengers}</p>
-            <p><strong>Tripulación:</strong> ${item.crew}</p>
-            <p><strong>Coste:</strong> ${item.cost_in_credits} créditos</p>
-        `;
+      renderStarshipsCards(results);
     }
 
-    modal.classList.add("active");
+    renderPagination(tabName);
+    updateResultsCount(tabName);
+  } catch (err) {
+    hideLoading();
+    console.error(`Error fetching ${resource}:`, err);
+    renderEmpty(tabName + '-grid', 'Error en connectar amb el servidor.');
+    const container = document.getElementById(tabName + '-pagination');
+    if (container) container.innerHTML = '';
+  }
 }
 
+// Al redimensionar, el número de columnas cambia: reajusta el tamaño de página
+window.addEventListener('resize', debounce(() => {
+  const state = tabState[currentTab];
+  if (getPageSize() !== state.perPage) {
+    loadTab(currentTab);
+  }
+}, 200));
 
-// ------------------------------------
-// CERRAR MODAL
-// ------------------------------------
+function updateResultsCount(tabName) {
+  if (tabName !== currentTab) return;
 
-modalClose.addEventListener("click", () => {
-    modal.classList.remove("active");
-});
+  const { count, page, totalPages, perPage } = tabState[tabName];
+  const label = RESOURCES[tabName];
+  const NAMES = { people: 'personatges', planets: 'planetes', starships: 'naves' };
 
-modal.addEventListener("click", event => {
+  if (count === 0) {
+    searchResultsCount.textContent = '';
+    return;
+  }
 
-    if (event.target === modal) {
-        modal.classList.remove("active");
+  const first = (page - 1) * perPage + 1;
+  const last = Math.min(page * perPage, count);
+  searchResultsCount.textContent =
+    `${first}–${last} de ${count} ${NAMES[label]}` + (totalPages > 1 ? ` · pàgina ${page}/${totalPages}` : '');
+}
+
+function renderCharactersCards(characters) {
+  const grid = document.getElementById('characters-grid');
+  grid.innerHTML = '';
+  
+  characters.forEach(character => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-image"></div>
+      <div class="card-content">
+        <div class="card-title">${character.name}</div>
+        <div class="card-description">
+          <strong>Alçada:</strong> ${character.height} cm<br>
+          <strong>Pes:</strong> ${character.mass} kg<br>
+          <strong>Gènere:</strong> ${character.gender}
+        </div>
+      </div>
+    `;
+    
+    card.addEventListener('click', () => {
+      openModal(character, 'characters');
+    });
+    
+    grid.appendChild(card);
+  });
+}
+
+// Planet rendering with cards
+function renderPlanetsCards(planets) {
+  const grid = document.getElementById('planets-grid');
+  grid.innerHTML = '';
+  
+  planets.forEach(planet => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-image"></div>
+      <div class="card-content">
+        <div class="card-title">${planet.name}</div>
+        <div class="card-description">
+          <strong>Clima:</strong> ${planet.climate || 'N/A'}<br>
+          <strong>Població:</strong> ${planet.population || 'N/A'}
+        </div>
+      </div>
+    `;
+    
+    card.addEventListener('click', () => {
+      openModal(planet, 'planets');
+    });
+    
+    grid.appendChild(card);
+  });
+}
+
+function renderStarshipsCards(starships) {
+  const grid = document.getElementById('starships-grid');
+  grid.innerHTML = '';
+  
+  starships.forEach(starship => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-image"></div>
+      <div class="card-content">
+        <div class="card-title">${starship.name}</div>
+        <div class="card-description">
+          <strong>Model:</strong> ${starship.model}<br>
+          <strong>Passatgers:</strong> ${starship.passengers || 'N/A'}
+        </div>
+      </div>
+    `;
+    
+    card.addEventListener('click', () => {
+      openModal(starship, 'starships');
+    });
+    
+    grid.appendChild(card);
+  });
+}
+
+// Loading state
+function showLoading() {
+  loadingOverlay.classList.remove('hidden');
+}
+
+function hideLoading() {
+  loadingOverlay.classList.add('hidden');
+}
+
+// Debounce
+function debounce(func, wait) {
+  let timeout;
+  return function(...args) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
+}
+
+// Campo de estrellas de fondo
+function seedStars() {
+  const area = window.innerWidth * window.innerHeight;
+  const count = Math.max(300, Math.min(600, Math.round(area / 9000)));
+
+  stars = [];
+  for (let i = 0; i < count; i++) {
+    stars.push({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      radius: 0.4 + Math.random() * 1.1,
+      alpha: 0.2 + Math.random() * 0.35,
+      twinkleSpeed: 0.4 + Math.random() * 1.4,
+      twinkleAmount: 0.1 + Math.random() * 0.25,
+      phase: Math.random() * Math.PI * 2,
+      driftX: (Math.random() - 0.5) * 0.14,
+      driftY: (Math.random() - 0.5) * 0.14,
+      color: STAR_COLORS[Math.floor(Math.random() * STAR_COLORS.length)]
+    });
+  }
+}
+
+function resizeStarfield() {
+  if (!starfieldCtx) return;
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  starfield.width = Math.floor(window.innerWidth * dpr);
+  starfield.height = Math.floor(window.innerHeight * dpr);
+  starfield.style.width = window.innerWidth + 'px';
+  starfield.style.height = window.innerHeight + 'px';
+  starfieldCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  if (!stars.length) seedStars();
+  // Redimensionar borra el canvas: en modo sin animación hay que repintar
+  if (reduceMotion) drawStars();
+}
+
+function drawStars() {
+  if (!starfieldCtx) return;
+
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  const time = performance.now() / 1000;
+
+  starfieldCtx.clearRect(0, 0, width, height);
+
+  for (const star of stars) {
+    if (!reduceMotion) {
+      star.x += star.driftX;
+      star.y += star.driftY;
+      if (star.x < -2) star.x = width + 2;
+      else if (star.x > width + 2) star.x = -2;
+      if (star.y < -2) star.y = height + 2;
+      else if (star.y > height + 2) star.y = -2;
     }
 
+    const alpha = reduceMotion
+      ? star.alpha
+      : star.alpha + Math.sin(time * star.twinkleSpeed + star.phase) * star.twinkleAmount;
+
+    starfieldCtx.globalAlpha = Math.max(0, Math.min(0.8, alpha));
+    starfieldCtx.fillStyle = star.color;
+    starfieldCtx.beginPath();
+    starfieldCtx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+    starfieldCtx.fill();
+  }
+
+  starfieldCtx.globalAlpha = 1;
+}
+
+function animateStars() {
+  starfieldRaf = null;
+  if (!starfieldCtx) return;
+
+  if (reduceMotion) {
+    drawStars();
+    return;
+  }
+  // Con la pestaña oculta no se dibuja; se reanuda con visibilitychange
+  if (document.hidden) return;
+
+  drawStars();
+  starfieldRaf = requestAnimationFrame(animateStars);
+}
+
+function startStarfield() {
+  if (!starfieldCtx) return;
+  resizeStarfield();
+  if (!starfieldRaf) {
+    starfieldRaf = requestAnimationFrame(animateStars);
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && !reduceMotion && !starfieldRaf) {
+    starfieldRaf = requestAnimationFrame(animateStars);
+  }
 });
 
+window.addEventListener('resize', debounce(resizeStarfield, 200));
 
-// ------------------------------------
-// INICIO
-// ------------------------------------
-
-mostrarGrid();
-cargarDatos();
-
+// Initial render
+document.addEventListener('DOMContentLoaded', () => {
+  startStarfield();
+  showGrid('characters-grid');
+  showGrid('characters-pagination', 'flex');
+  loadTab('characters');
+});
