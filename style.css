@@ -168,7 +168,6 @@ button {
   color: #0f0f23;
 }
 
-/* Main content with cards */
 .main {
   margin-top: 1rem;
   padding-bottom: 3rem;
@@ -176,7 +175,6 @@ button {
   background: #0f0f23;
 }
 
-/* Cards grid layout */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -185,7 +183,6 @@ button {
   padding: 0 2rem;
 }
 
-/* Ensure cards are well separated from edges */
 .card {
   background: var(--card-bg);
   border-radius: 8px;
@@ -246,7 +243,6 @@ button {
   margin-bottom: 0.5rem;
 }
 
-/* Estado vacío */
 .empty-state {
   grid-column: 1 / -1;
   text-align: center;
@@ -254,4 +250,102 @@ button {
   color: var(--text-muted);
   font-size: 1.05rem;
   letter-spacing: 0.05em;
+}
+
+.search-container {
+  background: rgba(227, 168, 61, 0.1);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  max-width: 500px;
+}
+
+.search-wrapper {
+  position: relative;
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.search-icon {
+  position: absolute;
+  left: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  width: 16px;
+  height: 16px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.5rem 0.5rem 0.5rem 1.8rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-light);
+  font-size: 0.85rem;
+  transition: border-color 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--primary-yellow);
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-clear {
+  background: none;
+  color: var(--text-muted);
+  padding: 0 0.5rem;
+  font-size: 1.25rem;
+  display: none;
+}
+
+.search-clear.visible {
+  display: block;
+}
+
+.table-container {
+  background: var(--card-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table thead {
+  background: var(--primary-red);
+}
+
+.data-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--primary-yellow);
+  border-bottom: 2px solid var(--primary-yellow);
+}
+
+.data-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.2s ease;
+}
+
+.data-table tbody tr:hover td {
+  background: var(--secondary-blue);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
 }
