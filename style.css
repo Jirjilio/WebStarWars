@@ -124,9 +124,7 @@ button {
   color: var(--primary-yellow);
 }
 
-/* ============================================
-   BOTONES DE NAVEGACIÓN
-   ============================================ */
+
 .nav-tabs {
   display: flex;
   justify-content: center;
