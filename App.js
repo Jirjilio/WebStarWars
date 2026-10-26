@@ -48,6 +48,7 @@ function cargarPersonajes(url) {
     .then((response) => response.json())
     .then((characters) => {
         
+        searchResultsCount.textContent = `${characters.count} resultados`;//Número total de personajes que ha encontrado SWAPI.
 
         characters.results.forEach((character) => {
             charactersGrid.innerHTML += `
@@ -63,6 +64,35 @@ function cargarPersonajes(url) {
         nextPage = characters.next// Guardamos la URL de la página posterior que nos proporciona la API
         previousPage = characters.previous// Guardamos la URL de la página anterior que nos proporciona la API
     });
+}
+
+//Busca personajes que contengan las letras, no exactamente que comience por esas letras
+function buscarPersonajes(nombre){
+    const url = `${SWAPI_BASE}/people/?search=${nombre}`;
+    fetch(url)
+        .then((response) => response.json())
+        .then((characters) => {
+            charactersGrid.innerHTML = ''
+
+            if(characters.count === 1){
+                searchResultsCount.textContent = `${characters.count} resultado`
+            }else{
+                searchResultsCount.textContent = `${characters.count} resultados`;//Número total de personajes que ha encontrado SWAPI.
+            }
+            
+            characters.results.forEach((character) => {
+                charactersGrid.innerHTML += `
+                    <div class="card">
+                        <h2>${character.name}</h2>
+                        <p>Altura: ${character.height} cm</p>
+                        <p>Peso: ${character.mass} kg</p>
+                    </div>
+                `;
+            });
+            nextPage = characters.next// Guardamos la URL de la página posterior que nos proporciona la API
+            previousPage = characters.previous// Guardamos la URL de la página anterior que nos proporciona la API
+      
+        });    
 }
 
 function siguientePagina() {
@@ -81,6 +111,12 @@ function anteriorPagina() {
     }
 }
 
+function limpiarBusqueda(url){
+    searchInput.value = '';//Borramos tambien el texto del buscador una vez que hayamos clicado la "X"
+    charactersGrid.innerHTML = '';//Limpiamos las tarjetas actuales.
+    cargarPersonajes(url)//Cargamos otra vez /people
+}
+
 /*
    5.EVENTOS
 */
@@ -94,8 +130,12 @@ nextPageButton.addEventListener('click', () => {
 // Detectamos cada vez que el usuario escribe en el campo de búsqueda.
 // searchInput.value contiene el texto que ha escrito.
 searchInput.addEventListener('input', () => {
-    console.log(searchInput.value);
+            buscarPersonajes(searchInput.value);
 });
+
+searchClear.addEventListener('click', () => {
+            limpiarBusqueda(`${SWAPI_BASE}/people`);
+})
 
 /*
    6.EJECUCIÓN INICIAL
