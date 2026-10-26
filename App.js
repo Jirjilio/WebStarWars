@@ -1,9 +1,23 @@
+/*
+    1.CONFIGURACIÓN
+*/
 const SWAPI_BASE = 'https://swapi.dev/api';
 
+
+/*
+    2.ELEMENTOS HTML
+*/
+//Creamos variables que apuntan a elementos de HTML
 const charactersGrid = document.getElementById('characters-grid');
 const planetsGrid = document.getElementById('planets-grid');
 const starshipsGrid = document.getElementById('starships-grid');
 
+//Botones de paginaciones (atrás y adelante)
+const previousPageButton = document.getElementById('previous-page');// addEventListener() espera a que el usuario haga clic en el botón.
+                                                                    // Cuando se produce el clic, se ejecuta la función anteriorPagina().
+const nextPageButton = document.getElementById('next-page')
+
+//Busqueda de personajes
 const navTabs = document.querySelectorAll('.nav-tab');
 const searchInput = document.getElementById('character-search');
 const searchClear = document.getElementById('search-clear');
@@ -14,595 +28,79 @@ const modalTitle = document.getElementById('modal-title');
 const modalSubtitle = document.getElementById('modal-subtitle');
 const modalBody = document.getElementById('modal-body');
 const modalClose = document.getElementById('modal-close');
-
 const loadingOverlay = document.getElementById('loading-overlay');
 
-// Campo de estrellas de fondo
-const starfield = document.getElementById('starfield');
-const starfieldCtx = starfield ? starfield.getContext('2d') : null;
-const STAR_COLORS = ['#ffffff', '#f5f5f0', '#e3a83d', '#a9c4ff'];
-const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-let stars = [];
-let starfieldRaf = null;
+/*
+    3.VARIABLES DE ESTADO: datos que nuestro programa necesita recordar
+*/
+let nextPage = null;
+let previousPage = null;
 
-let currentPage = 1;
-let currentSearch = '';
-let currentTab = 'characters';
+/*
+    4.FUNCIONES
+*/
+//Se utiliza fetch() para obtener los personajes desde la API SWAPI. 
+//Los datos se convierten a JSON y se recorren con forEach(), generando 
+//dinámicamente tarjetas con el nombre, altura y peso de cada personaje.
+function cargarPersonajes(url) {
 
-const RESOURCES = {
-  characters: 'people',
-  planets: 'planets',
-  starships: 'starships'
-};
+    fetch(url)
+    .then((response) => response.json())
+    .then((characters) => {
+        
 
-// Estado independiente por pestaña
-const tabState = {
-  characters: { page: 1, search: '', totalPages: 1, count: 0, perPage: 0 },
-  planets: { page: 1, search: '', totalPages: 1, count: 0, perPage: 0 },
-  starships: { page: 1, search: '', totalPages: 1, count: 0, perPage: 0 }
-};
+        characters.results.forEach((character) => {
+            charactersGrid.innerHTML += `
+                <div class="card">
+                    <h2>${character.name}</h2>
+                    <p>Altura: ${character.height} cm</p>
+                    <p>Peso: ${character.mass} kg</p>
+                </div>
+            `;
+        });
 
-// swapi.dev ignora `limit`: siempre devuelve 10 elementos por petición
-const API_PAGE_SIZE = 10;
-// Objetivo de elementos por página, que luego se ajusta a un múltiplo
-// del número de columnas para que la última fila nunca quede a medias
-const BASE_PAGE_SIZE = 10;
-
-// Tab switching
-navTabs.forEach(tab => {
-  tab.addEventListener('click', () => {
-    const tabName = tab.dataset.tab;
-
-    navTabs.forEach(t => {
-      t.classList.remove('active');
-      t.setAttribute('aria-selected', 'false');
+        //Cuando estemos en la pagina 1 (nextPage -> 2) (previousPage -> null), pagina 2 (nextPage -> 3) (previousPage -> 1)
+        nextPage = characters.next// Guardamos la URL de la página posterior que nos proporciona la API
+        previousPage = characters.previous// Guardamos la URL de la página anterior que nos proporciona la API
     });
-    tab.classList.add('active');
-    tab.setAttribute('aria-selected', 'true');
+}
 
-    currentTab = tabName;
-    currentPage = tabState[tabName].page;
-    currentSearch = tabState[tabName].search;
+function siguientePagina() {
+    if(nextPage){//La variable tiene un valor (un texto), así que JavaScript lo considera como "true", sino hay valor "false"
+    charactersGrid.innerHTML = '';
 
-    searchInput.value = currentSearch;
-    searchClear.classList.toggle('visible', Boolean(currentSearch));
-    searchResultsCount.textContent = '';
+    cargarPersonajes(nextPage);
+    }
+}
 
-    hideGrid('characters-grid', 'planets-grid', 'starships-grid',
-             'characters-pagination', 'planets-pagination', 'starships-pagination');
-    showGrid(tabName + '-grid');
-    showGrid(tabName + '-pagination', 'flex');
+function anteriorPagina() {
+    if(previousPage){//La variable tiene un valor (un texto), así que JavaScript lo considera como "true", sino hay valor "false"
+    charactersGrid.innerHTML = '';
 
-    loadTab(tabName);
-  });
+    cargarPersonajes(previousPage);
+    }
+}
+
+/*
+   5.EVENTOS
+*/
+previousPageButton.addEventListener('click', () => {
+            anteriorPagina();
+})
+nextPageButton.addEventListener('click', () => {
+            siguientePagina();
+})
+
+// Detectamos cada vez que el usuario escribe en el campo de búsqueda.
+// searchInput.value contiene el texto que ha escrito.
+searchInput.addEventListener('input', () => {
+    console.log(searchInput.value);
 });
 
-// Show/hide grid functions
-function showGrid(gridId, display = 'grid') {
-  const grid = document.getElementById(gridId);
-  if (grid) {
-    grid.style.display = display;
-  }
-}
-
-function hideGrid(...gridIds) {
-  gridIds.forEach(id => {
-    const grid = document.getElementById(id);
-    if (grid) {
-      grid.style.display = 'none';
-    }
-  });
-}
-
-// Search functionality
-searchInput.addEventListener('input', debounce(handleSearch, 300));
-
-searchClear.addEventListener('click', () => {
-  searchInput.value = '';
-  searchClear.classList.remove('visible');
-  handleSearch();
-});
-
-function handleSearch() {
-  const query = searchInput.value.trim();
-  currentSearch = query;
-  tabState[currentTab].search = query;
-
-  searchClear.classList.toggle('visible', Boolean(query));
-
-  currentPage = 1;
-  tabState[currentTab].page = 1;
-  loadTab(currentTab);
-}
-
-// Empty state
-function renderEmpty(gridId, message) {
-  const grid = document.getElementById(gridId);
-  if (!grid) return;
-  grid.innerHTML = `<p class="empty-state">${message}</p>`;
-}
-
-// Modal
-function openModal(character) {
-  modalTitle.textContent = character.name;
-  modalSubtitle.textContent = `${character.height} cm | ${character.mass} kg`;
-  
-  let filmsList = '';
-  character.films.forEach((filmUrl, index) => {
-    fetch(filmUrl)
-      .then(res => res.json())
-      .then(film => {
-        filmsList += film.title;
-        if (index < character.films.length - 1) {
-          filmsList += ', ';
-        }
-        if (index === character.films.length - 1) {
-          updateModalBody(character, filmsList);
-        }
-      })
-      .catch(err => console.error('Error fetching film:', err));
-  });
-  
-  modalBody.innerHTML = `
-    <p><strong>Alçada:</strong> ${character.height} cm</p>
-    <p><strong>Pes:</strong> ${character.mass} kg</p>
-    <p><strong>Gènere:</strong> ${character.gender}</p>
-    <p><strong>Color de cabelles:</strong> ${character.hair_color}</p>
-    <p><strong>Color de pell:</strong> ${character.skin_color}</p>
-    <p><strong>Color dels ulls:</strong> ${character.eye_color}</p>
-    <p><strong>Any de naixement:</strong> ${character.birth_year}</p>
-    <div class="section-title">Pel·lícules</div>
-    <div class="list" id="films-list"></div>
-  `;
-  
-  // Wait for films to load
-  setTimeout(() => {
-    const filmsList = document.getElementById('films-list');
-    if (filmsList.children.length === 0) {
-      filmsList.innerHTML = '<span>No available</span>';
-    }
-  }, 500);
-  
-  characterModal.classList.add('active');
-}
-
-function updateModalBody(character, filmsList) {
-  modalBody.innerHTML = `
-    <p><strong>Alçada:</strong> ${character.height} cm</p>
-    <p><strong>Pes:</strong> ${character.mass} kg</p>
-    <p><strong>Gènere:</strong> ${character.gender}</p>
-    <p><strong>Color de cabelles:</strong> ${character.hair_color}</p>
-    <p><strong>Color de pell:</strong> ${character.skin_color}</p>
-    <p><strong>Color dels ulls:</strong> ${character.eye_color}</p>
-    <p><strong>Any de naixement:</strong> ${character.birth_year}</p>
-    <div class="section-title">Pel·lícules</div>
-    <div class="list" id="films-list">
-      ${filmsList ? filmsList : '<span>No available</span>'}
-    </div>
-  `;
-}
-
-function closeModal() {
-  characterModal.classList.remove('active');
-}
-
-modalClose.addEventListener('click', closeModal);
-
-characterModal.addEventListener('click', (e) => {
-  if (e.target === characterModal) {
-    closeModal();
-  }
-});
-
-// Paginación
-function renderPagination(tabName) {
-  const container = document.getElementById(tabName + '-pagination');
-  if (!container) return;
-
-  const { page, totalPages } = tabState[tabName];
-  container.innerHTML = '';
-
-  if (totalPages <= 1) return;
-
-  const addBtn = (label, targetPage, opts = {}) => {
-    const btn = document.createElement('button');
-    btn.className = 'page-btn' + (opts.active ? ' active' : '') + (opts.disabled ? ' disabled' : '');
-    btn.textContent = label;
-    btn.disabled = Boolean(opts.disabled);
-    if (!opts.disabled && !opts.active) {
-      btn.addEventListener('click', () => goToPage(tabName, targetPage));
-    }
-    container.appendChild(btn);
-  };
-
-  addBtn('«', 1, { disabled: page === 1 });
-  addBtn('‹', page - 1, { disabled: page === 1 });
-
-  // Ventana de páginas alrededor de la actual
-  const start = Math.max(1, page - 2);
-  const end = Math.min(totalPages, start + 4);
-  const realStart = Math.max(1, end - 4);
-
-  if (realStart > 1) {
-    addBtn('1', 1);
-    if (realStart > 2) {
-      const dots = document.createElement('span');
-      dots.className = 'page-dots';
-      dots.textContent = '…';
-      container.appendChild(dots);
-    }
-  }
-
-  for (let p = realStart; p <= end; p++) {
-    addBtn(String(p), p, { active: p === page });
-  }
-
-  if (end < totalPages) {
-    if (end < totalPages - 1) {
-      const dots = document.createElement('span');
-      dots.className = 'page-dots';
-      dots.textContent = '…';
-      container.appendChild(dots);
-    }
-    addBtn(String(totalPages), totalPages);
-  }
-
-  addBtn('›', page + 1, { disabled: page === totalPages });
-  addBtn('»', totalPages, { disabled: page === totalPages });
-}
-
-function goToPage(tabName, page) {
-  const state = tabState[tabName];
-  if (page < 1 || page > state.totalPages || page === state.page) return;
-
-  state.page = page;
-  if (tabName === currentTab) {
-    currentPage = page;
-  }
-
-  loadTab(tabName);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-// Número de columnas que la rejilla usa con el ancho actual. Una rejilla oculta
-// devuelve 'none', así que se mide la primera que esté visible.
-function getColumnCount() {
-  const ids = [currentTab + '-grid', 'characters-grid', 'planets-grid', 'starships-grid'];
-  for (const id of ids) {
-    const grid = document.getElementById(id);
-    if (!grid) continue;
-    const template = getComputedStyle(grid).gridTemplateColumns;
-    if (template && template !== 'none') {
-      return Math.max(1, template.trim().split(/\s+/).length);
-    }
-  }
-  return 1;
-}
-
-// Tamaño de página múltiplo de las columnas: las filas quedan siempre completas
-function getPageSize() {
-  const columns = getColumnCount();
-  const rows = Math.max(1, Math.ceil(BASE_PAGE_SIZE / columns));
-  return columns * rows;
-}
-
-function fetchJson(url) {
-  return fetch(url).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  });
-}
-
-// Las peticiones de más no existen y la API responde 404: no es un error real,
-// simplemente no quedan más resultados. La primera página sí debe funcionar.
-function fetchTailJson(url) {
-  return fetchJson(url).catch(err => {
-    if (/^HTTP 404$/.test(err.message)) return { results: [] };
-    throw err;
-  });
-}
-
-// Une las peticiones necesarias de la API para cubrir un tramo de `perPage` elementos
-function fetchSlice(resource, page, perPage, search) {
-  const start = (page - 1) * perPage;
-  const firstApiPage = Math.floor(start / API_PAGE_SIZE) + 1;
-  const offset = start % API_PAGE_SIZE;
-
-  const requests = [];
-  const needed = Math.ceil((offset + perPage) / API_PAGE_SIZE);
-  for (let i = 0; i < needed; i++) {
-    let url = `${SWAPI_BASE}/${resource}/?page=${firstApiPage + i}`;
-    if (search) url += `&search=${encodeURIComponent(search)}`;
-    requests.push(i === 0 ? fetchJson(url) : fetchTailJson(url));
-  }
-
-  return Promise.all(requests).then(pages => {
-    const items = [];
-    pages.forEach(data => (data.results || []).forEach(item => items.push(item)));
-    return {
-      count: pages[0].count ?? 0,
-      results: items.slice(offset, offset + perPage)
-    };
-  });
-}
-
-// Carga de datos con paginación del servidor
-async function loadTab(tabName) {
-  const state = tabState[tabName];
-  const resource = RESOURCES[tabName];
-
-  showLoading();
-  state.perPage = getPageSize();
-
-  try {
-    let data = await fetchSlice(resource, state.page, state.perPage, state.search);
-
-    state.count = data.count;
-    state.totalPages = state.count > 0 ? Math.ceil(state.count / state.perPage) : 1;
-
-    // El ancho pudo cambiar y dejar la página actual fuera de rango
-    if (state.page > state.totalPages) {
-      state.page = state.totalPages;
-      if (tabName === currentTab) currentPage = state.page;
-      data = await fetchSlice(resource, state.page, state.perPage, state.search);
-    }
-
-    hideLoading();
-
-    const results = data.results;
-
-    if (results.length === 0) {
-      renderEmpty(tabName + '-grid', state.search
-        ? `No s'ha trobat cap resultat per a "${state.search}".`
-        : 'No hi ha cap resultat.');
-    } else if (tabName === 'characters') {
-      renderCharactersCards(results);
-    } else if (tabName === 'planets') {
-      renderPlanetsCards(results);
-    } else {
-      renderStarshipsCards(results);
-    }
-
-    renderPagination(tabName);
-    updateResultsCount(tabName);
-  } catch (err) {
-    hideLoading();
-    console.error(`Error fetching ${resource}:`, err);
-    renderEmpty(tabName + '-grid', 'Error en connectar amb el servidor.');
-    const container = document.getElementById(tabName + '-pagination');
-    if (container) container.innerHTML = '';
-  }
-}
-
-// Al redimensionar, el número de columnas cambia: reajusta el tamaño de página
-window.addEventListener('resize', debounce(() => {
-  const state = tabState[currentTab];
-  if (getPageSize() !== state.perPage) {
-    loadTab(currentTab);
-  }
-}, 200));
-
-function updateResultsCount(tabName) {
-  if (tabName !== currentTab) return;
-
-  const { count, page, totalPages, perPage } = tabState[tabName];
-  const label = RESOURCES[tabName];
-  const NAMES = { people: 'personatges', planets: 'planetes', starships: 'naves' };
-
-  if (count === 0) {
-    searchResultsCount.textContent = '';
-    return;
-  }
-
-  const first = (page - 1) * perPage + 1;
-  const last = Math.min(page * perPage, count);
-  searchResultsCount.textContent =
-    `${first}–${last} de ${count} ${NAMES[label]}` + (totalPages > 1 ? ` · pàgina ${page}/${totalPages}` : '');
-}
-
-function renderCharactersCards(characters) {
-  const grid = document.getElementById('characters-grid');
-  grid.innerHTML = '';
-  
-  characters.forEach(character => {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `
-      <div class="card-image"></div>
-      <div class="card-content">
-        <div class="card-title">${character.name}</div>
-        <div class="card-description">
-          <strong>Alçada:</strong> ${character.height} cm<br>
-          <strong>Pes:</strong> ${character.mass} kg<br>
-          <strong>Gènere:</strong> ${character.gender}
-        </div>
-      </div>
-    `;
-    
-    card.addEventListener('click', () => {
-      openModal(character);
-    });
-    
-    grid.appendChild(card);
-  });
-}
-
-// Planet rendering with cards
-function renderPlanetsCards(planets) {
-  const grid = document.getElementById('planets-grid');
-  grid.innerHTML = '';
-  
-  planets.forEach(planet => {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `
-      <div class="card-image"></div>
-      <div class="card-content">
-        <div class="card-title">${planet.name}</div>
-        <div class="card-description">
-          <strong>Clima:</strong> ${planet.climate || 'N/A'}<br>
-          <strong>Població:</strong> ${planet.population || 'N/A'}
-        </div>
-      </div>
-    `;
-    
-    card.addEventListener('click', () => {
-      openModal(planet);
-    });
-    
-    grid.appendChild(card);
-  });
-}
-
-function renderStarshipsCards(starships) {
-  const grid = document.getElementById('starships-grid');
-  grid.innerHTML = '';
-  
-  starships.forEach(starship => {
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.innerHTML = `
-      <div class="card-image"></div>
-      <div class="card-content">
-        <div class="card-title">${starship.name}</div>
-        <div class="card-description">
-          <strong>Model:</strong> ${starship.model}<br>
-          <strong>Passatgers:</strong> ${starship.passengers || 'N/A'}
-        </div>
-      </div>
-    `;
-    
-    card.addEventListener('click', () => {
-      openModal(starship);
-    });
-    
-    grid.appendChild(card);
-  });
-}
-
-// Loading state
-function showLoading() {
-  loadingOverlay.classList.remove('hidden');
-}
-
-function hideLoading() {
-  loadingOverlay.classList.add('hidden');
-}
-
-// Debounce
-function debounce(func, wait) {
-  let timeout;
-  return function(...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
-  };
-}
-
-// Campo de estrellas de fondo
-function seedStars() {
-  const area = window.innerWidth * window.innerHeight;
-  const count = Math.max(40, Math.min(240, Math.round(area / 9000)));
-
-  stars = [];
-  for (let i = 0; i < count; i++) {
-    stars.push({
-      x: Math.random() * window.innerWidth,
-      y: Math.random() * window.innerHeight,
-      radius: 0.4 + Math.random() * 1.1,
-      alpha: 0.2 + Math.random() * 0.35,
-      twinkleSpeed: 0.4 + Math.random() * 1.4,
-      twinkleAmount: 0.1 + Math.random() * 0.25,
-      phase: Math.random() * Math.PI * 2,
-      driftX: (Math.random() - 0.5) * 0.14,
-      driftY: (Math.random() - 0.5) * 0.14,
-      color: STAR_COLORS[Math.floor(Math.random() * STAR_COLORS.length)]
-    });
-  }
-}
-
-function resizeStarfield() {
-  if (!starfieldCtx) return;
-
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  starfield.width = Math.floor(window.innerWidth * dpr);
-  starfield.height = Math.floor(window.innerHeight * dpr);
-  starfield.style.width = window.innerWidth + 'px';
-  starfield.style.height = window.innerHeight + 'px';
-  starfieldCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  if (!stars.length) seedStars();
-  // Redimensionar borra el canvas: en modo sin animación hay que repintar
-  if (reduceMotion) drawStars();
-}
-
-function drawStars() {
-  if (!starfieldCtx) return;
-
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  const time = performance.now() / 1000;
-
-  starfieldCtx.clearRect(0, 0, width, height);
-
-  for (const star of stars) {
-    if (!reduceMotion) {
-      star.x += star.driftX;
-      star.y += star.driftY;
-      if (star.x < -2) star.x = width + 2;
-      else if (star.x > width + 2) star.x = -2;
-      if (star.y < -2) star.y = height + 2;
-      else if (star.y > height + 2) star.y = -2;
-    }
-
-    const alpha = reduceMotion
-      ? star.alpha
-      : star.alpha + Math.sin(time * star.twinkleSpeed + star.phase) * star.twinkleAmount;
-
-    starfieldCtx.globalAlpha = Math.max(0, Math.min(0.8, alpha));
-    starfieldCtx.fillStyle = star.color;
-    starfieldCtx.beginPath();
-    starfieldCtx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
-    starfieldCtx.fill();
-  }
-
-  starfieldCtx.globalAlpha = 1;
-}
-
-function animateStars() {
-  starfieldRaf = null;
-  if (!starfieldCtx) return;
-
-  if (reduceMotion) {
-    drawStars();
-    return;
-  }
-  // Con la pestaña oculta no se dibuja; se reanuda con visibilitychange
-  if (document.hidden) return;
-
-  drawStars();
-  starfieldRaf = requestAnimationFrame(animateStars);
-}
-
-function startStarfield() {
-  if (!starfieldCtx) return;
-  resizeStarfield();
-  if (!starfieldRaf) {
-    starfieldRaf = requestAnimationFrame(animateStars);
-  }
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && !reduceMotion && !starfieldRaf) {
-    starfieldRaf = requestAnimationFrame(animateStars);
-  }
-});
-
-window.addEventListener('resize', debounce(resizeStarfield, 200));
-
-// Initial render
-document.addEventListener('DOMContentLoaded', () => {
-  startStarfield();
-  showGrid('characters-grid');
-  showGrid('characters-pagination', 'flex');
-  loadTab('characters');
-});
+/*
+   6.EJECUCIÓN INICIAL
+*/
+cargarPersonajes(`${SWAPI_BASE}/people`);//Ejecutamos la funcion
+
+planetsGrid.innerHTML = 'Planetas';
+starshipsGrid.innerHTML = 'Naves';
